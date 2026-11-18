@@ -1,0 +1,21 @@
+{
+  "name": "studyflow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "StudyFlow — Academic Planning Platform for University Students",
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "server": "npm run dev --workspace=server",
+    "client": "npm run dev --workspace=client",
+    "test": "npm run test --workspaces",
+    "test:server": "npm run test --workspace=server",
+    "build": "npm run build --workspaces"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
