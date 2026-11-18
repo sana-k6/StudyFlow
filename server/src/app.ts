@@ -5,6 +5,10 @@ import { env } from './config/env.js';
 import { getDb } from './config/db.js';
 import { authRouter } from './routes/auth.js';
 import { usersRouter } from './routes/users.js';
+import { modulesRouter } from './routes/modules.js';
+import { calendarRouter } from './routes/calendar.js';
+import { assignmentsRouter } from './routes/assignments.js';
+import { subtasksRouter } from './routes/subtasks.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { sendSuccess, sendError } from './utils/response.js';
 
@@ -29,6 +33,10 @@ app.get('/api/v1/health', (_req, res) => {
 // Mount Routes
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/users', usersRouter);
+app.use('/api/v1/modules', modulesRouter);
+app.use('/api/v1/calendar', calendarRouter);
+app.use('/api/v1/assignments', assignmentsRouter);
+app.use('/api/v1/subtasks', subtasksRouter);
 
 // 404 Catch-All
 app.use((_req, res) => {
