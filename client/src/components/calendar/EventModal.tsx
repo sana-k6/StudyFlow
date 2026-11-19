@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { apiClient } from '../../services/apiClient';
 import { CalendarEvent, EventType, Module } from '@studyflow/shared/types';
-import { Calendar as CalendarIcon, Trash2, X } from 'lucide-react';
+import { Calendar as CalendarIcon, Trash2, X, Sparkles } from 'lucide-react';
 
 interface EventModalProps {
   isOpen: boolean;
@@ -10,6 +10,11 @@ interface EventModalProps {
   onEventSaved: () => void;
   initialEvent?: CalendarEvent | null;
   defaultDate?: string;
+  defaultTitle?: string;
+  defaultModuleId?: string;
+  defaultSubtaskId?: string;
+  defaultEstimatedMins?: number;
+  defaultEventType?: EventType;
 }
 
 export default function EventModal({
@@ -19,25 +24,53 @@ export default function EventModal({
   onEventSaved,
   initialEvent,
   defaultDate,
+  defaultTitle,
+  defaultModuleId,
+  defaultSubtaskId,
+  defaultEstimatedMins = 60,
+  defaultEventType = 'LECTURE',
 }: EventModalProps) {
-  const [title, setTitle] = useState(initialEvent?.title || '');
-  const [eventType, setEventType] = useState<EventType>(initialEvent?.event_type || 'LECTURE');
-  const [moduleId, setModuleId] = useState<string>(initialEvent?.module_id || '');
-  
-  // Format initial start & end date-time strings (YYYY-MM-DDTHH:mm)
-  const initialDateStr = defaultDate || new Date().toISOString().split('T')[0];
-  const [startDate, setStartDate] = useState(
-    initialEvent ? initialEvent.start_time.slice(0, 10) : initialDateStr
-  );
-  const [startTime, setStartTime] = useState(
-    initialEvent ? initialEvent.start_time.slice(11, 16) : '09:00'
-  );
-  const [endTime, setEndTime] = useState(
-    initialEvent ? initialEvent.end_time.slice(11, 16) : '10:30'
-  );
-
+  const [title, setTitle] = useState('');
+  const [eventType, setEventType] = useState<EventType>('LECTURE');
+  const [moduleId, setModuleId] = useState<string>('');
+  const [subtaskId, setSubtaskId] = useState<string | null>(null);
+  const [startDate, setStartDate] = useState('');
+  const [startTime, setStartTime] = useState('09:00');
+  const [endTime, setEndTime] = useState('10:00');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialEvent) {
+      setTitle(initialEvent.title);
+      setEventType(initialEvent.event_type);
+      setModuleId(initialEvent.module_id || '');
+      setSubtaskId(initialEvent.subtask_id || null);
+      setStartDate(initialEvent.start_time.slice(0, 10));
+      setStartTime(initialEvent.start_time.slice(11, 16));
+      setEndTime(initialEvent.end_time.slice(11, 16));
+    } else {
+      setTitle(defaultTitle || '');
+      setEventType(defaultEventType);
+      setModuleId(defaultModuleId || '');
+      setSubtaskId(defaultSubtaskId || null);
+      
+      const dateToUse = defaultDate || new Date().toISOString().split('T')[0];
+      setStartDate(dateToUse);
+
+      const now = new Date();
+      // Default to next nearest hour (e.g. 10:00)
+      const currentHour = (now.getUTCHours() + 1) % 24;
+      const startH = String(currentHour).padStart(2, '0');
+      setStartTime(`${startH}:00`);
+
+      // Calculate end time based on estimated mins
+      const endTotalMins = currentHour * 60 + defaultEstimatedMins;
+      const endH = String(Math.floor(endTotalMins / 60) % 24).padStart(2, '0');
+      const endM = String(endTotalMins % 60).padStart(2, '0');
+      setEndTime(`${endH}:${endM}`);
+    }
+  }, [isOpen, initialEvent, defaultDate, defaultTitle, defaultModuleId, defaultSubtaskId, defaultEstimatedMins, defaultEventType]);
 
   if (!isOpen) return null;
 
@@ -58,22 +91,27 @@ export default function EventModal({
         return;
       }
 
+      const isFixed = eventType !== 'AI_STUDY_BLOCK';
+
       if (initialEvent) {
         await apiClient.updateEvent(initialEvent.id, {
           title: title.trim(),
           event_type: eventType,
           module_id: moduleId || null,
+          subtask_id: subtaskId || null,
           start_time: startIso,
           end_time: endIso,
+          is_fixed: isFixed,
         });
       } else {
         await apiClient.createEvent({
           title: title.trim(),
           event_type: eventType,
           module_id: moduleId || null,
+          subtask_id: subtaskId || null,
           start_time: startIso,
           end_time: endIso,
-          is_fixed: eventType !== 'AI_STUDY_BLOCK',
+          is_fixed: isFixed,
         });
       }
 
@@ -104,12 +142,19 @@ export default function EventModal({
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         <div className="p-5 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-              <CalendarIcon className="w-4 h-4" />
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+              eventType === 'AI_STUDY_BLOCK' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'
+            }`}>
+              {eventType === 'AI_STUDY_BLOCK' ? <Sparkles className="w-4 h-4" /> : <CalendarIcon className="w-4 h-4" />}
             </div>
-            <h3 className="font-semibold text-slate-900 text-base">
-              {initialEvent ? 'Edit Calendar Event' : 'Add Calendar Event'}
-            </h3>
+            <div>
+              <h3 className="font-semibold text-slate-900 text-base">
+                {initialEvent ? 'Edit Calendar Event' : eventType === 'AI_STUDY_BLOCK' ? 'Schedule Study Block' : 'Add Calendar Event'}
+              </h3>
+              <p className="text-xs text-slate-500">
+                {eventType === 'AI_STUDY_BLOCK' ? 'Movable study block (will not block auto-rescheduling)' : 'Fixed university event or commitment'}
+              </p>
+            </div>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
             <X className="w-5 h-5" />
@@ -124,13 +169,13 @@ export default function EventModal({
           )}
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Event Title</label>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Event / Session Title</label>
             <input
               type="text"
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Operating Systems Lecture"
+              placeholder="e.g. Study Session: Balanced Trees"
               className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -141,13 +186,13 @@ export default function EventModal({
               <select
                 value={eventType}
                 onChange={(e) => setEventType(e.target.value as EventType)}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
               >
-                <option value="LECTURE">Lecture</option>
-                <option value="TUTORIAL">Tutorial</option>
-                <option value="EXAM">Exam</option>
-                <option value="PERSONAL">Personal</option>
-                <option value="AI_STUDY_BLOCK">AI Study Block</option>
+                <option value="AI_STUDY_BLOCK">✨ AI Study Block</option>
+                <option value="LECTURE">📘 Lecture</option>
+                <option value="TUTORIAL">👥 Tutorial / Lab</option>
+                <option value="EXAM">🎯 Exam / Assessment</option>
+                <option value="PERSONAL">☕ Personal</option>
               </select>
             </div>
 
@@ -227,7 +272,7 @@ export default function EventModal({
                 disabled={saving}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg shadow-sm transition"
               >
-                {saving ? 'Saving...' : initialEvent ? 'Update Event' : 'Create Event'}
+                {saving ? 'Saving...' : initialEvent ? 'Update' : eventType === 'AI_STUDY_BLOCK' ? 'Schedule Block' : 'Create Event'}
               </button>
             </div>
           </div>

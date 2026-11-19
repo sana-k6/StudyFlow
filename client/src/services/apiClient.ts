@@ -14,6 +14,7 @@ import {
   CalendarEvent,
   CreateCalendarEventDto,
   UpdateCalendarEventDto,
+  NextActionResponse,
 } from '@studyflow/shared/types.js';
 
 const BASE_URL = '/api/v1';
@@ -167,4 +168,7 @@ export const apiClient = {
     request<{ id: string; deleted: boolean }>(`/subtasks/${id}`, {
       method: 'DELETE',
     }),
+
+  // Next-Action & Tasks
+  getNextAction: () => request<NextActionResponse>('/tasks/next-action'),
 };

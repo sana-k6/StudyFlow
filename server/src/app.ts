@@ -9,6 +9,7 @@ import { modulesRouter } from './routes/modules.js';
 import { calendarRouter } from './routes/calendar.js';
 import { assignmentsRouter } from './routes/assignments.js';
 import { subtasksRouter } from './routes/subtasks.js';
+import { tasksRouter } from './routes/tasks.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { sendSuccess, sendError } from './utils/response.js';
 
@@ -37,6 +38,7 @@ app.use('/api/v1/modules', modulesRouter);
 app.use('/api/v1/calendar', calendarRouter);
 app.use('/api/v1/assignments', assignmentsRouter);
 app.use('/api/v1/subtasks', subtasksRouter);
+app.use('/api/v1/tasks', tasksRouter);
 
 // 404 Catch-All
 app.use((_req, res) => {
