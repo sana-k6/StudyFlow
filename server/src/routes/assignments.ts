@@ -4,10 +4,14 @@ import { z } from 'zod';
 import { getDb } from '../config/db.js';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/authMiddleware.js';
 import { sendSuccess, sendError } from '../utils/response.js';
+import { createRateLimiter } from '../middleware/rateLimiter.js';
+import { generateAssignmentBreakdown } from '../services/geminiService.js';
 import { Assignment, Subtask } from '@studyflow/shared/types.js';
 
 export const assignmentsRouter = Router();
 assignmentsRouter.use(authMiddleware);
+
+const aiRateLimiter = createRateLimiter(10, 60 * 1000);
 
 const statusEnum = z.enum(['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED']);
 
@@ -262,6 +266,116 @@ assignmentsRouter.post('/:id/subtasks', (req: AuthenticatedRequest, res: Respons
     `).get(id) as RawSubtaskRow;
 
     sendSuccess<Subtask>(res, formatSubtask(created), {}, 201);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/v1/assignments/:id/ai-breakdown
+assignmentsRouter.post('/:id/ai-breakdown', aiRateLimiter, async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const db = getDb();
+    const userId = req.user!.id;
+    const assignmentId = req.params.id;
+
+    // 1. Quota Check
+    const userRow = db.prepare('SELECT subscription_tier FROM users WHERE id = ?').get(userId) as { subscription_tier: string };
+    if (userRow.subscription_tier !== 'PRO') {
+      const startOfMonth = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString();
+      const usageCountRow = db.prepare(`
+        SELECT COUNT(*) as count FROM ai_usage_logs
+        WHERE user_id = ? AND feature_type = 'BREAKDOWN' AND created_at >= ?
+      `).get(userId, startOfMonth) as { count: number };
+
+      if ((usageCountRow?.count || 0) >= 3) {
+        sendError(
+          res,
+          'QUOTA_EXCEEDED',
+          'Monthly AI breakdown quota reached (3/3). Upgrade to Pro for unlimited breakdowns.',
+          403,
+          { quota: 3, used: usageCountRow.count }
+        );
+        return;
+      }
+    }
+
+    // 2. Assignment Verification
+    const assignment = db.prepare(`
+      SELECT id, title, description, estimated_total_mins
+      FROM assignments
+      WHERE id = ? AND user_id = ?
+    `).get(assignmentId, userId) as Assignment | undefined;
+
+    if (!assignment) {
+      sendError(res, 'NOT_FOUND', 'Assignment not found or not owned by user', 404);
+      return;
+    }
+
+    // 3. Gemini Generation
+    const breakdown = await generateAssignmentBreakdown({
+      title: assignment.title,
+      description: assignment.description,
+      estimated_total_mins: assignment.estimated_total_mins,
+    });
+
+    // 4. Persistence in Database
+    const insertedSubtasks: Subtask[] = [];
+    const transaction = db.transaction(() => {
+      // Clear previous AI-generated subtasks for this assignment to allow clean regeneration
+      db.prepare('DELETE FROM subtasks WHERE assignment_id = ? AND ai_generated = 1').run(assignmentId);
+
+      // Find current max order index of manual subtasks
+      const maxOrderRow = db.prepare('SELECT COALESCE(MAX(order_index), -1) as maxOrder FROM subtasks WHERE assignment_id = ?').get(assignmentId) as { maxOrder: number };
+      let currentOrder = maxOrderRow.maxOrder + 1;
+
+      const insertSubtaskStmt = db.prepare(`
+        INSERT INTO subtasks (id, assignment_id, title, order_index, estimated_mins, completed_mins, is_completed, ai_generated)
+        VALUES (?, ?, ?, ?, ?, 0, 0, 1)
+      `);
+
+      for (const item of breakdown.subtasks) {
+        const subtaskId = uuidv4();
+        insertSubtaskStmt.run(
+          subtaskId,
+          assignmentId,
+          item.title,
+          currentOrder,
+          item.estimated_mins
+        );
+
+        insertedSubtasks.push({
+          id: subtaskId,
+          assignment_id: assignmentId,
+          title: item.title,
+          order_index: currentOrder,
+          estimated_mins: item.estimated_mins,
+          completed_mins: 0,
+          is_completed: false,
+          ai_generated: true,
+        });
+
+        currentOrder++;
+      }
+
+      // Log AI Usage
+      db.prepare(`
+        INSERT INTO ai_usage_logs (id, user_id, feature_type, tokens_used, created_at)
+        VALUES (?, ?, 'BREAKDOWN', ?, ?)
+      `).run(uuidv4(), userId, breakdown.tokens_used, new Date().toISOString());
+    });
+
+    transaction();
+
+    sendSuccess(
+      res,
+      {
+        subtasks: insertedSubtasks,
+        tokens_used: breakdown.tokens_used,
+        count: insertedSubtasks.length,
+      },
+      {},
+      200
+    );
   } catch (error) {
     next(error);
   }

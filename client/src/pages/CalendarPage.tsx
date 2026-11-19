@@ -1,23 +1,33 @@
 import { useState, useEffect } from 'react';
-import { apiClient } from '../services/apiClient';
-import { CalendarEvent, Module, NextActionResponse, EventType } from '@studyflow/shared/types';
+import { apiClient, ApiErrorResponse } from '../services/apiClient';
+import { CalendarEvent, Module, NextActionResponse, EventType, UserProfileResponse } from '@studyflow/shared/types';
 import AcademicCalendarGrid from '../components/calendar/AcademicCalendarGrid';
 import IcsImportModal from '../components/calendar/IcsImportModal';
 import EventModal from '../components/calendar/EventModal';
 import NextActionCard from '../components/dashboard/NextActionCard';
-import { UploadCloud, Plus, Sparkles } from 'lucide-react';
+import PaywallModal from '../components/common/PaywallModal';
+import { UploadCloud, Plus, Sparkles, RefreshCw, CheckCircle2 } from 'lucide-react';
 
 interface CalendarPageProps {
   modules: Module[];
+  user: UserProfileResponse;
   onModulesChanged: () => void;
+  onRefreshProfile?: () => void;
 }
 
-export default function CalendarPage({ modules, onModulesChanged }: CalendarPageProps) {
+export default function CalendarPage({ modules, user, onModulesChanged, onRefreshProfile }: CalendarPageProps) {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [isIcsModalOpen, setIsIcsModalOpen] = useState(false);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+
+  // Pro Paywall state
+  const [isPaywallOpen, setIsPaywallOpen] = useState(false);
+
+  // Auto-Scheduling states
+  const [isAutoScheduling, setIsAutoScheduling] = useState(false);
+  const [scheduleFeedback, setScheduleFeedback] = useState<{ count: number; rationale: string } | null>(null);
 
   // Next-Action state
   const [nextAction, setNextAction] = useState<NextActionResponse | null>(null);
@@ -75,6 +85,50 @@ export default function CalendarPage({ modules, onModulesChanged }: CalendarPage
     }
   }
 
+  async function handleAutoSchedule() {
+    try {
+      setIsAutoScheduling(true);
+      setScheduleFeedback(null);
+      const res = await apiClient.generateSchedule();
+      setScheduleFeedback({
+        count: res.scheduled_count,
+        rationale: res.next_action_rationale,
+      });
+      fetchEvents();
+      fetchNextAction();
+    } catch (err: unknown) {
+      if (err instanceof ApiErrorResponse && err.code === 'PRO_TIER_REQUIRED') {
+        setIsPaywallOpen(true);
+      } else {
+        console.error('Auto-scheduling error:', err);
+      }
+    } finally {
+      setIsAutoScheduling(false);
+    }
+  }
+
+  async function handleRebalance() {
+    try {
+      setIsAutoScheduling(true);
+      setScheduleFeedback(null);
+      const res = await apiClient.rebalanceSchedule();
+      setScheduleFeedback({
+        count: res.scheduled_count,
+        rationale: res.next_action_rationale,
+      });
+      fetchEvents();
+      fetchNextAction();
+    } catch (err: unknown) {
+      if (err instanceof ApiErrorResponse && err.code === 'PRO_TIER_REQUIRED') {
+        setIsPaywallOpen(true);
+      } else {
+        console.error('Rebalance error:', err);
+      }
+    } finally {
+      setIsAutoScheduling(false);
+    }
+  }
+
   function handleScheduleBlockForNextAction(
     subtaskTitle: string,
     moduleId?: string,
@@ -128,6 +182,20 @@ export default function CalendarPage({ modules, onModulesChanged }: CalendarPage
         onScheduleBlock={handleScheduleBlockForNextAction}
       />
 
+      {scheduleFeedback && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-2xl flex items-start space-x-3 text-xs shadow-2xs animate-in fade-in">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <h4 className="font-bold">
+              {scheduleFeedback.count > 0
+                ? `Auto-Scheduled ${scheduleFeedback.count} Study Blocks`
+                : 'Schedule Checked'}
+            </h4>
+            <p className="text-emerald-700 leading-relaxed">{scheduleFeedback.rationale}</p>
+          </div>
+        </div>
+      )}
+
       {/* Top Banner Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
         <div>
@@ -138,11 +206,46 @@ export default function CalendarPage({ modules, onModulesChanged }: CalendarPage
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Pro Auto-Schedule Button */}
+          <button
+            onClick={handleAutoSchedule}
+            disabled={isAutoScheduling}
+            className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs transition ${
+              user.subscription_tier === 'PRO'
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white'
+                : 'bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200'
+            }`}
+          >
+            {isAutoScheduling ? (
+              <>
+                <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                <span>Scheduling...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>Auto-Schedule {user.subscription_tier === 'FREE' && '⚡ (Pro)'}</span>
+              </>
+            )}
+          </button>
+
+          {user.subscription_tier === 'PRO' && (
+            <button
+              onClick={handleRebalance}
+              disabled={isAutoScheduling}
+              className="flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition"
+              title="Rebalance future study blocks around timetable changes"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Rebalance</span>
+            </button>
+          )}
+
           <button
             onClick={() => handleAddStudyBlock()}
             className="flex items-center space-x-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 rounded-xl text-xs font-semibold transition"
           >
-            <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+            <Plus className="w-3.5 h-3.5 text-emerald-600" />
             <span>+ Study Block</span>
           </button>
 
@@ -199,6 +302,18 @@ export default function CalendarPage({ modules, onModulesChanged }: CalendarPage
         defaultEstimatedMins={modalDefaults.estimatedMins}
         defaultEventType={modalDefaults.eventType}
         onEventSaved={() => {
+          fetchEvents();
+          fetchNextAction();
+        }}
+      />
+      {/* Paywall Modal */}
+      <PaywallModal
+        isOpen={isPaywallOpen}
+        onClose={() => setIsPaywallOpen(false)}
+        featureTitle="Intelligent Auto-Scheduling"
+        featureDescription="Auto-scheduling maps coursework into your real timetable gaps over the next 14 days using Gemini. Available on StudyFlow Pro."
+        onUpgradeSuccess={() => {
+          if (onRefreshProfile) onRefreshProfile();
           fetchEvents();
           fetchNextAction();
         }}

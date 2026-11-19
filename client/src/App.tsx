@@ -84,7 +84,7 @@ export default function App() {
   }
 
   if (user) {
-    return <AppShell user={user} onLogout={handleLogout} />;
+    return <AppShell user={user} onLogout={handleLogout} onRefreshUser={fetchCurrentUser} />;
   }
 
   return (

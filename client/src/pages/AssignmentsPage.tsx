@@ -3,18 +3,25 @@ import { apiClient, AssignmentWithDetails } from '../services/apiClient';
 import { Module } from '@studyflow/shared/types';
 import AssignmentCard from '../components/assignments/AssignmentCard';
 import AssignmentModal from '../components/assignments/AssignmentModal';
+import AiBreakdownModal from '../components/assignments/AiBreakdownTree';
+import PaywallModal from '../components/common/PaywallModal';
 import { Plus, BookOpen, Clock, CheckCircle2 } from 'lucide-react';
 
 interface AssignmentsPageProps {
   modules: Module[];
   onOpenModulesModal: () => void;
+  onRefreshProfile?: () => void;
 }
 
-export default function AssignmentsPage({ modules, onOpenModulesModal }: AssignmentsPageProps) {
+export default function AssignmentsPage({ modules, onOpenModulesModal, onRefreshProfile }: AssignmentsPageProps) {
   const [assignments, setAssignments] = useState<AssignmentWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedModuleId, setSelectedModuleId] = useState<string>('ALL');
+
+  // AI Breakdown Modal state
+  const [breakdownTarget, setBreakdownTarget] = useState<{ id: string; title: string } | null>(null);
+  const [isPaywallOpen, setIsPaywallOpen] = useState(false);
 
   useEffect(() => {
     fetchAssignments();
@@ -173,6 +180,7 @@ export default function AssignmentsPage({ modules, onOpenModulesModal }: Assignm
               key={assignment.id}
               assignment={assignment}
               onRefresh={fetchAssignments}
+              onAiBreakdown={(id) => setBreakdownTarget({ id, title: assignment.title })}
             />
           ))}
         </div>
@@ -184,6 +192,32 @@ export default function AssignmentsPage({ modules, onOpenModulesModal }: Assignm
         onClose={() => setIsModalOpen(false)}
         modules={modules}
         onAssignmentCreated={fetchAssignments}
+      />
+
+      {/* AI Breakdown Modal */}
+      {breakdownTarget && (
+        <AiBreakdownModal
+          isOpen={Boolean(breakdownTarget)}
+          onClose={() => setBreakdownTarget(null)}
+          assignmentId={breakdownTarget.id}
+          assignmentTitle={breakdownTarget.title}
+          onBreakdownApplied={() => {
+            fetchAssignments();
+            if (onRefreshProfile) onRefreshProfile();
+          }}
+          onQuotaExceeded={() => setIsPaywallOpen(true)}
+        />
+      )}
+
+      {/* Paywall Upgrade Modal */}
+      <PaywallModal
+        isOpen={isPaywallOpen}
+        onClose={() => setIsPaywallOpen(false)}
+        featureTitle="Monthly AI Quota Reached"
+        featureDescription="You've used all 3 free monthly AI breakdowns. Upgrade to StudyFlow Pro for unlimited breakdowns."
+        onUpgradeSuccess={() => {
+          if (onRefreshProfile) onRefreshProfile();
+        }}
       />
     </div>
   );

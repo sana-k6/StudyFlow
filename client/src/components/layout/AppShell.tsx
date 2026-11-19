@@ -3,6 +3,7 @@ import { UserProfileResponse, Module } from '@studyflow/shared/types';
 import { apiClient } from '../../services/apiClient';
 import CalendarPage from '../../pages/CalendarPage';
 import AssignmentsPage from '../../pages/AssignmentsPage';
+import AnalyticsPage from '../../pages/AnalyticsPage';
 import ModulesModal from '../modules/ModulesModal';
 import {
   GraduationCap,
@@ -11,15 +12,17 @@ import {
   BookOpen,
   LogOut,
   Sparkles,
+  BarChart3,
 } from 'lucide-react';
 
 interface AppShellProps {
   user: UserProfileResponse;
   onLogout: () => void;
+  onRefreshUser?: () => void;
 }
 
-export default function AppShell({ user, onLogout }: AppShellProps) {
-  const [activeTab, setActiveTab] = useState<'calendar' | 'assignments'>('calendar');
+export default function AppShell({ user, onLogout, onRefreshUser }: AppShellProps) {
+  const [activeTab, setActiveTab] = useState<'calendar' | 'assignments' | 'analytics'>('calendar');
   const [modules, setModules] = useState<Module[]>([]);
   const [isModulesModalOpen, setIsModulesModalOpen] = useState(false);
 
@@ -82,6 +85,18 @@ export default function AppShell({ user, onLogout }: AppShellProps) {
             </button>
 
             <button
+              onClick={() => setActiveTab('analytics')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                activeTab === 'analytics'
+                  ? 'bg-white text-blue-600 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span>Analytics</span>
+            </button>
+
+            <button
               onClick={() => setIsModulesModalOpen(true)}
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100/60 transition"
             >
@@ -93,8 +108,14 @@ export default function AppShell({ user, onLogout }: AppShellProps) {
 
         {/* User Profile & Tier Status */}
         <div className="flex items-center space-x-3">
-          <span className="inline-flex items-center space-x-1 text-xs font-bold px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full border border-blue-200/80">
-            <Sparkles className="w-3 h-3 text-blue-500" />
+          <span
+            className={`inline-flex items-center space-x-1 text-xs font-bold px-2.5 py-1 rounded-full border ${
+              user.subscription_tier === 'PRO'
+                ? 'bg-gradient-to-r from-purple-50 to-indigo-50 text-purple-700 border-purple-200'
+                : 'bg-blue-50 text-blue-700 border-blue-200/80'
+            }`}
+          >
+            <Sparkles className="w-3 h-3 text-amber-500" />
             <span>{user.subscription_tier} Tier</span>
           </span>
 
@@ -116,9 +137,20 @@ export default function AppShell({ user, onLogout }: AppShellProps) {
       {/* Main Tab View */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
         {activeTab === 'calendar' ? (
-          <CalendarPage modules={modules} onModulesChanged={fetchModules} />
+          <CalendarPage
+            modules={modules}
+            user={user}
+            onModulesChanged={fetchModules}
+            onRefreshProfile={onRefreshUser}
+          />
+        ) : activeTab === 'assignments' ? (
+          <AssignmentsPage
+            modules={modules}
+            onOpenModulesModal={() => setIsModulesModalOpen(true)}
+            onRefreshProfile={onRefreshUser}
+          />
         ) : (
-          <AssignmentsPage modules={modules} onOpenModulesModal={() => setIsModulesModalOpen(true)} />
+          <AnalyticsPage modules={modules} />
         )}
       </main>
 

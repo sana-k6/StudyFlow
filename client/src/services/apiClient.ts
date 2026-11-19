@@ -15,6 +15,8 @@ import {
   CreateCalendarEventDto,
   UpdateCalendarEventDto,
   NextActionResponse,
+  AnalyticsSummary,
+  StudyLog,
 } from '@studyflow/shared/types.js';
 
 const BASE_URL = '/api/v1';
@@ -171,4 +173,58 @@ export const apiClient = {
 
   // Next-Action & Tasks
   getNextAction: () => request<NextActionResponse>('/tasks/next-action'),
+
+  // AI Features
+  triggerAiBreakdown: (assignmentId: string) =>
+    request<{ subtasks: Subtask[]; tokens_used: number; count: number }>(
+      `/assignments/${assignmentId}/ai-breakdown`,
+      { method: 'POST' }
+    ),
+
+  generateSchedule: () =>
+    request<{
+      scheduled_count: number;
+      blocks: CalendarEvent[];
+      next_action_rationale: string;
+      is_rebalance?: boolean;
+    }>('/schedule/generate', { method: 'POST' }),
+
+  rebalanceSchedule: () =>
+    request<{
+      scheduled_count: number;
+      blocks: CalendarEvent[];
+      next_action_rationale: string;
+      is_rebalance?: boolean;
+    }>('/schedule/rebalance', { method: 'POST' }),
+
+  // Billing & Pro Upgrade
+  upgradeMock: () => request<User>('/billing/upgrade-mock', { method: 'POST' }),
+
+  // Analytics & Study Logs
+  getAnalyticsSummary: (range: '7d' | '30d' = '7d') =>
+    request<AnalyticsSummary>(`/analytics/summary?range=${range}`),
+
+  logStudy: (data: {
+    module_id: string;
+    subtask_id?: string | null;
+    duration_mins: number;
+    focus_rating?: number | null;
+    logged_at?: string;
+  }) =>
+    request<StudyLog>('/analytics/study-logs', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getStudyLogs: () =>
+    request<
+      Array<
+        StudyLog & {
+          module_code: string;
+          module_name: string;
+          module_color: string;
+          subtask_title?: string;
+        }
+      >
+    >('/analytics/study-logs'),
 };
